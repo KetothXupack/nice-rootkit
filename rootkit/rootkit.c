@@ -286,8 +286,6 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
     unsigned i = 0, j, found;
     unsigned long user, nice, system, idle;
 
-    //printk("=============================================\n");
-
     while(i < read) {
         found = 0;
         lstart = &buf[i];
@@ -301,49 +299,32 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
             char *_tmp1 = kmalloc(len + 1, GFP_KERNEL);
             char *result = kmalloc(len + 1, GFP_KERNEL);
 
-            //char to[len];
-            //char _tmp1[len];
-            //char result[len];
-
             memset(to, 0, len + 1);
             memset(_tmp1, 0, len + 1);
             memset(result, 0, len + 1);
 
             strncpy_from_user(to, lstart, len);
-            //printk("--> (%d, %d) <%s>\n", len, strlen(to), to);
 
             if (first_cpu) {
                 sscanf(to, "cpu  %lu %lu %lu %lu", &user, &nice, &system, &idle);
                 sprintf(_tmp1, "cpu  %lu %lu %lu %lu", user, nice, system, idle);
-
-                //printk("~~~>(-1, %d) %s\n", strlen(_tmp1), _tmp1);
                 sprintf(result, "cpu  %lu %lu %lu %lu", user, 0l, system, idle + nice);
                 first_cpu = 0;
             } else {
                 sscanf(to, "cpu%i %lu %lu %lu %lu", &cpu, &user, &nice, &system, &idle);
                 sprintf(_tmp1, "cpu%i %lu %lu %lu %lu", cpu, user, nice, system, idle);
-
-                //printk("~~~>(%d, %d) %s\n", cpu, strlen(_tmp1), _tmp1);
                 sprintf(result, "cpu%i %lu %lu %lu %lu", cpu, user, 0l, system, idle + nice);
             }
 
             const int size = strlen(result);
             const int tail = strlen(_tmp1);
 
-            //printk("===> (%d) <%s>\n", size, result);
-            //printk(">>>> (%d)\n", len - tail);
-            //printk(">>>> [%s]\n", to + tail);
-            //printk(">>>> diff:%d\n", size-tail);
-
             memcpy(result + strlen(result), to + tail, len - tail);
 
             j = size + len - tail;
-            //printk("===> (%d) <%s>\n", j, result);
-
             copy_to_user(lstart, result, j);
 
             memmove(lstart + j, new_line, nl);
-            //printk("buff2 ---> [%s]\n", lstart);
 
             kfree(to);
             kfree(_tmp1);
@@ -358,7 +339,6 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
             i += j + 1;
         }
     }
-    //printk("\n----buff(after)----%s\n", buf);
     return read;
 }
 
