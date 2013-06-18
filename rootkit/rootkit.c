@@ -282,7 +282,7 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
     //printk("\n----buff(before)----%s\n", buf);
 
     int first_cpu = 1, cpu;
-    char *lstart, *new_line, *ss;
+    char *lstart, *new_line;
     unsigned i = 0, j, found;
     unsigned long user, nice, system, idle;
 
@@ -292,6 +292,7 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
         new_line = strchr(lstart, '\n');
 
         if (strstr(lstart, "cpu") != NULL) {
+            int size, tail;
             const int nl =  strlen_user(new_line);
             const int len =  strlen_user(lstart) - nl;
 
@@ -303,7 +304,8 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
             memset(_tmp1, 0, len + 1);
             memset(result, 0, len + 1);
 
-            strncpy_from_user(to, lstart, len);
+            if (strncpy_from_user(to, lstart, len) != len)
+                printk(KERN_DEBUG "Unable to copy array to kernel\n");
 
             if (first_cpu) {
                 sscanf(to, "cpu  %lu %lu %lu %lu", &user, &nice, &system, &idle);
@@ -316,13 +318,14 @@ static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t
                 sprintf(result, "cpu%i %lu %lu %lu %lu", cpu, user, 0l, system, idle + nice);
             }
 
-            const int size = strlen(result);
-            const int tail = strlen(_tmp1);
+            size = strlen(result);
+            tail = strlen(_tmp1);
 
             memcpy(result + strlen(result), to + tail, len - tail);
 
             j = size + len - tail;
-            copy_to_user(lstart, result, j);
+            if (copy_to_user(lstart, result, j))
+                printk(KERN_DEBUG "Unable to copy array to user\n");;
 
             memmove(lstart + j, new_line, nl);
 
