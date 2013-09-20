@@ -109,7 +109,7 @@ inode->i_fop = &fops
 typedef struct file_operations __no_const fops_no_const;
 #define FOPS_TYPE static fops_no_const
 #else
-#definr FOPS_TYPE static struct file_operations
+#define FOPS_TYPE static struct file_operations
 #endif
 
 struct exit_status {
